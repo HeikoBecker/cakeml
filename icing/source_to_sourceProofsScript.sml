@@ -639,10 +639,36 @@ Definition is_optimise_correct_def:
            <| rws := st2.fp_state.rws ++ rws; opts := fpOptR; choices := choicesR |>, Rval r))
 End
 
+Definition flatten_def:
+  flatten [] (acc: α list) = acc ∧
+  flatten (x::rest) acc = flatten rest (x ++ acc)
+End
+
+Definition is_optimise_with_plan_correct_def:
+  is_optimise_with_plan_correct rws plan (st1:'a semanticPrimitives$state) st2 env cfg exps r =
+    (evaluate st1 env
+             (MAP (optimise_with_plan cfg plan) exps) = (st2, Rval r) ∧
+    (cfg.canOpt ⇔ st1.fp_state.canOpt = FPScope Opt) ∧
+    st1.fp_state.canOpt ≠ Strict ∧
+    rws = flatten (MAP SND plan) [] ∧
+    (~ st1.fp_state.real_sem) ==>
+    ∃ fpOpt choices fpOptR choicesR.
+      evaluate (st1 with fp_state := st1.fp_state with
+                <| rws := st1.fp_state.rws ++ rws; opts := fpOpt; choices := choices |>) env exps =
+        (st2 with fp_state := st2.fp_state with
+           <| rws := st2.fp_state.rws ++ rws; opts := fpOptR; choices := choicesR |>, Rval r))
+End
+
 Theorem MAP_FST_optimise:
   MAP FST (MAP (\ (p, e). (p, optimise cfg e)) l) = MAP FST l
 Proof
   Induct_on `l` \\ fs[] \\ rpt strip_tac \\ PairCases_on `h` \\ fs[]
+QED
+
+Theorem Map_FST_optimise_with_plan:
+  MAP FST (MAP (\ (p, e). (p, optimise_with_plan cfg plan e)) l) = MAP FST l
+Proof
+  Induct_on ‘l’ \\ fs[] \\ rpt strip_tac \\ PairCases_on ‘h’ \\ fs[]
 QED
 
 Theorem optimise_empty_sing:
@@ -676,6 +702,12 @@ QED
   \\ res_tac
 QED *)
 
+Theorem optimise_with_plan_empty_sing:
+  ∀ cfg e. optimise_with_plan cfg [] e = e
+Proof
+  fs[optimise_with_plan_def]
+QED
+
 Theorem optimise_empty:
   ∀ exps cfg. MAP (optimise (cfg with optimisations := [])) exps = exps
 Proof
@@ -684,11 +716,26 @@ Proof
   \\ rpt strip_tac \\ fs[optimise_def, optimise_empty_sing]
 QED
 
+Theorem optimise_with_plan_empty:
+  ∀ exps cfg. MAP (optimise_with_plan cfg []) exps = exps
+Proof
+  Induct_on ‘exps’ \\ rpt strip_tac
+  >- (EVAL_TAC)
+  \\ rpt strip_tac \\ fs[optimise_with_plan_def, optimise_with_plan_empty_sing]
+QED
+
 Theorem optimise_pat_empty:
   ∀ pl cfg. MAP (λ (p,e). (p, optimise (cfg with optimisations := []) e)) pl = pl
 Proof
   Induct_on ‘pl’ \\ rpt strip_tac >- (EVAL_TAC)
   \\ fs[] \\ Cases_on ‘h’ \\ fs[optimise_empty_sing]
+QED
+
+Theorem optimise_with_plan_pat_empty:
+  ∀ pl cfg. MAP (λ (p,e). (p, optimise_with_plan cfg [] e)) pl = pl
+Proof
+  Induct_on ‘pl’ \\ rpt strip_tac >- (EVAL_TAC)
+  \\ fs[] \\ Cases_on ‘h’ \\ fs[optimise_with_plan_empty_sing]
 QED
 
 Theorem fpState_upd_id:
@@ -1250,11 +1297,26 @@ Proof
   Cases_on ‘e’ \\ simp[stos_pass_def]
 QED
 
+Theorem stos_pass_with_plans_sing[simp]:
+  [ HD (stos_pass_with_plans cfg [plan] [e]) ] = stos_pass_with_plans cfg [plan] [e]
+Proof
+  Cases_on ‘e’ \\ simp[stos_pass_with_plans_def]
+QED
+
 Theorem opt_pass_decs_unfold:
   no_opt_decs cfg (stos_pass_decs cfg [Dlet loc p e]) =
   [Dlet loc p (HD (no_optimise_pass cfg (stos_pass cfg [e])))]
 Proof
   simp[stos_pass_decs_def, no_opt_decs_def, HD]
+QED
+
+Theorem opt_pass_with_plans_decs_unfold:
+  no_opt_decs cfg (stos_pass_with_plans_decs cfg [plans] [Dlet loc p e]) =
+  [Dlet loc p (HD (no_optimise_pass cfg (stos_pass_with_plans cfg [plans] [e])))]
+Proof
+  Cases_on ‘e’
+  \\ simp[stos_pass_with_plans_decs_def, no_opt_decs_def, HD]
+  \\ simp[no_optimise_pass_def, HD, stos_pass_with_plans_def]
 QED
 
 Theorem opt_pass_fun_unfold:
@@ -1264,6 +1326,132 @@ Proof
   simp[stos_pass_def, no_optimise_pass_def]
 QED
 
+Theorem MEM_for_all_MAPi:
+  ∀ (P: α -> α -> bool) (f: α -> α) (g: α -> α) l l'.
+    (∀x. MEM x l ⇒ P (f x) x) ∧ (∀x. P (g x) x) ⇒
+    MAPi (λn e. if n = i then (f e) else (g e)) l = l' ⇒
+    (∀i. (i: num) < LENGTH l ⇒ P (EL i l') (EL i l))
+Proof
+  rpt strip_tac
+  \\ imp_res_tac (INST_TYPE[alpha |-> beta] EL_MAPi)
+  \\ pop_assum ( Q.ISPEC_THEN ‘(λ (n :num) (e :α). if n = (i :num) then ((f :α -> α) e) else (g :α -> α) e): num -> α -> α’ strip_assume_tac )
+  \\ fs[EVAL “(λn e. if n = i then f e else g e) i' (EL i' l)”]
+  \\ Cases_on ‘i = i'’ \\ rveq  \\ fs[]
+  \\ qpat_x_assum ‘∀ x. MEM x l ⇒ P (f x) x’ (qspec_then ‘(EL i l)’ assume_tac)
+  \\ Q.ISPECL_THEN [‘l’, ‘(EL i l)’] strip_assume_tac MEM_EL
+  \\ last_assum ( (assume_tac o snd) o EQ_IMP_RULE ) \\ fs[]
+  \\ ‘EL i l = EL i l’ by fs[]
+  \\ first_x_assum irule
+  \\ qexists_tac ‘i’
+  \\ fs[]
+QED
+
+Theorem MAPi_EL_nested:
+  ∀ l n. n < LENGTH l ⇒ EL n (MAPi (λ n e. (n, e)) l) = EL n (MAPi (λ n e. (n, (EL n l))) l)
+Proof
+  rpt strip_tac
+  \\ qspecl_then [‘(λ n e. (n, e))’, ‘n’, ‘l’] imp_res_tac EL_MAPi
+  \\ qspecl_then [‘(λ n e. (n, (EL n l)))’, ‘n’, ‘l’] imp_res_tac EL_MAPi
+  \\ fs[EVAL “(λn e. (n,e)) n (EL n l)”, EVAL “(λn e. (n,EL n l)) n (EL n l)”]
+QED
+
+Theorem MAPi_EL_no_fun:
+  ∀ l. MAPi (λ n e. (n, e)) l = MAPi (λ n e. (n, (EL n l))) l
+Proof
+  rpt strip_tac
+  \\ qspecl_then [‘MAPi (λ n e. (n, e)) l’, ‘MAPi (λ n e. (n, (EL n l))) l’] strip_assume_tac LIST_EQ
+  \\ ‘LENGTH (MAPi (λ n e. (n, e)) l) = LENGTH (MAPi (λ n e. (n, (EL n l))) l)’ by fs[LENGTH_MAPi]
+  \\ fs[]
+QED
+
+Theorem MAPi_EL_list_quant:
+  ∀ f l. MAPi (λ n e. f n e) l = MAPi (λ n e. f n (EL n l)) l
+Proof
+  rpt strip_tac
+  \\ qspecl_then [‘MAPi (λ n e. f n e) l’, ‘MAPi (λ n e. f n (EL n l)) l’] strip_assume_tac LIST_EQ
+  \\ pop_assum irule
+  \\ rpt strip_tac \\ fs[LENGTH_MAPi]
+QED
+
+Theorem MAPi_EL_list:
+  MAPi (λ n e. f n e) l = MAPi (λ n e. f n (EL n l)) l
+Proof
+  fs[MAPi_EL_list_quant]
+QED
+
+Theorem MAPi_same_EL_quant:
+  ∀ exps. MAPi (λ n e. (EL n exps)) exps = exps
+Proof
+  strip_tac
+  \\ qspecl_then [‘λ n e. e’, ‘exps’] assume_tac MAPi_EL_list_quant
+  \\ fs[]
+QED
+
+Theorem MAPi_same_EL:
+  MAPi (λ n e. (EL n exps)) exps = exps
+Proof
+  fs[MAPi_same_EL_quant]
+QED
+
+local
+val rewrites_no_effect = “
+ λ cfg path plan e. perform_rewrites cfg path plan e = e
+”
+in
+Theorem perform_rewrites_no_plan_same:
+  ∀ cfg path plan e. plan = [] ⇒ ^rewrites_no_effect cfg path plan e
+Proof
+  ho_match_mp_tac perform_rewrites_ind
+  \\ fs[perform_rewrites_def]
+  \\ strip_tac
+  >- (
+  rpt strip_tac
+  \\ Cases_on ‘cfg.canOpt’
+  \\ fs[rewriteFPexp_def]
+  )
+  >- (
+  rpt strip_tac
+  \\ Cases_on ‘cfg.canOpt’
+  \\ fs[rewriteFPexp_def]
+  \\ irule LIST_EQ
+  \\ fs[LENGTH_MAPi]
+  \\ rpt strip_tac
+  \\ Cases_on ‘x = i’
+  \\ fs[]
+  \\ TRY (
+    qpat_x_assum ‘∀e. MEM e exps ⇒ _’ (qspec_then ‘EL i exps’ assume_tac)
+    \\ fs[MEM_EL]
+    \\ pop_assum irule
+    \\ qexists_tac ‘i’ \\ fs[]
+    )
+  \\ TRY (
+    Cases_on ‘EL i pes’ \\ fs[]
+    \\ qpat_x_assum ‘∀ p e. MEM (p, e) pes ⇒ _’ (qspecl_then [‘q’, ‘r’] assume_tac)
+    \\ fs[MEM_EL]
+    \\ pop_assum irule
+    \\ qexists_tac ‘i’ \\ fs[]
+    )
+  \\ TRY (
+    Cases_on ‘EL x pes’ \\ fs[]
+    )
+  )
+QED
+end
+
+Theorem perform_rewrites_no_plan_simple:
+  perform_rewrites cfg path [] e = e
+Proof
+  qspecl_then [‘cfg’, ‘path’, ‘[]’, ‘e’] strip_assume_tac perform_rewrites_no_plan_same
+  \\ fs[]
+QED
+
+Theorem opt_pass_with_plans_fun_unfold:
+  no_optimise_pass cfg (stos_pass_with_plans cfg [plans] [Fun s e]) =
+  [Fun s (HD (no_optimise_pass cfg (stos_pass_with_plans cfg [plans] [e])))]
+Proof
+  simp[stos_pass_with_plans_def, no_optimise_pass_def]
+QED
+
 Theorem opt_pass_scope_unfold:
   no_optimise_pass cfg (stos_pass cfg [FpOptimise sc e]) =
   [no_optimisations cfg (optimise cfg (FpOptimise sc e))]
@@ -1271,11 +1459,113 @@ Proof
   simp[stos_pass_def, optimise_def, no_optimise_pass_def]
 QED
 
+Theorem optimise_with_plan_scope:
+  ∀cfg plan sc e x. optimise_with_plan cfg plan (FpOptimise sc e) = x ⇒ ∃e'. x = (FpOptimise sc e')
+Proof
+  Induct_on ‘plan’
+  >- fs[optimise_with_plan_empty_sing]
+  >- (
+  rpt strip_tac
+  \\ PairCases_on ‘h’
+  \\ fs[optimise_with_plan_def]
+  \\ Cases_on ‘h0’ \\ fs[perform_rewrites_def]
+  \\ TRY ( qpat_x_assum ‘∀ cfg' sc' e'. ∃ e''. optimise_with_plan _ _ _ = _’ (
+                          qspecl_then [‘cfg’, ‘sc’, ‘e’] strip_assume_tac
+                          )
+           \\ qexists_tac ‘e'’ \\ fs[] \\ NO_TAC
+         )
+  \\ qpat_x_assum ‘∀ cfg' sc' e'. ∃ e''. optimise_with_plan _ _ _ = _’ (
+                    qspecl_then [‘cfg’, ‘sc’, ‘perform_rewrites (cfg with canOpt := (sc = Opt)) o' h1 e’] strip_assume_tac
+                    )
+  \\ qexists_tac ‘e'’ \\ fs[]
+  )
+QED
+
+Theorem opt_pass_with_plans_scope_unfold:
+  no_optimise_pass cfg (stos_pass_with_plans cfg [plan] [FpOptimise sc e]) =
+  [no_optimisations cfg (optimise_with_plan cfg plan (FpOptimise sc e))]
+Proof
+  simp[stos_pass_with_plans_def, optimise_with_plan_def, no_optimise_pass_def]
+  \\ Cases_on ‘plan’
+  >- fs[optimise_with_plan_empty_sing, no_optimise_pass_def]
+  >- (
+  Cases_on ‘h’
+  \\ fs[optimise_with_plan_def, perform_rewrites_def]
+  \\ Cases_on ‘optimise_with_plan cfg t (perform_rewrites cfg q r (FpOptimise sc e))’
+  \\ fs[no_optimise_pass_def]
+  \\ fs[no_optimisations_def, no_optimise_pass_def, HD]
+  \\ Induct_on ‘t’
+  \\ rpt strip_tac
+  >- (
+    fs[optimise_with_plan_empty_sing, perform_rewrites_def]
+    \\ Cases_on ‘q’ \\ fs[perform_rewrites_def]
+    )
+  >- (
+    Cases_on ‘q’ \\ fs[perform_rewrites_def]
+    \\ drule optimise_with_plan_scope
+    \\ strip_tac
+    \\ fs[]
+    )
+  )
+QED
+
 Theorem opt_pass_let_unfold:
   no_optimise_pass cfg (stos_pass cfg [Let x e1 e2]) =
   [no_optimisations cfg (optimise cfg (Let x e1 e2))]
 Proof
   simp[stos_pass_def, optimise_def, no_optimise_pass_def]
+QED
+
+Theorem optimise_with_plan_let:
+  ∀cfg plan sc e1 e2 x a. optimise_with_plan cfg plan (Let a e1 e2) = x ⇒ ∃e1' e2'. x = (Let a e1' e2')
+Proof
+  Induct_on ‘plan’
+  >- fs[optimise_with_plan_empty_sing]
+  >- (
+  rpt strip_tac
+  \\ PairCases_on ‘h’
+  \\ fs[optimise_with_plan_def]
+  \\ Cases_on ‘h0’ \\ fs[perform_rewrites_def]
+  \\ TRY (
+    qpat_x_assum ‘∀ cfg' e1' e2' a. ∃ e1'' e2''. optimise_with_plan _ _ _ = _’ (
+                   qspecl_then [‘cfg’, ‘perform_rewrites cfg o' h1 e1’, ‘e2’, ‘a’] strip_assume_tac
+                   )
+    \\ qexists_tac ‘e1'’ \\ qexists_tac ‘e2'’ \\ fs[] \\ NO_TAC
+    )
+  \\ TRY (
+    qpat_x_assum ‘∀ cfg' e1' e2' a. ∃ e1'' e2''. optimise_with_plan _ _ _ = _’ (
+                   qspecl_then [‘cfg’, ‘e1’, ‘perform_rewrites cfg o' h1 e2’, ‘a’] strip_assume_tac
+                   )
+    \\ qexists_tac ‘e1'’ \\ qexists_tac ‘e2'’ \\ fs[] \\ NO_TAC
+    )
+  \\ TRY (
+    qpat_x_assum ‘∀ cfg' e1' e2' a. ∃ e1'' e2''. optimise_with_plan _ _ _ = _’ (
+                   qspecl_then [‘cfg’, ‘e1’, ‘e2’, ‘a’] strip_assume_tac
+                   )
+    \\ qexists_tac ‘e1'’ \\ qexists_tac ‘e2'’ \\ fs[] \\ NO_TAC
+    )
+  )
+QED
+
+Theorem opt_pass_with_plans_let_unfold:
+  no_optimise_pass cfg (stos_pass_with_plans cfg [plan] [Let x e1 e2]) =
+  [no_optimisations cfg (optimise_with_plan cfg plan (Let x e1 e2))]
+Proof
+  simp[stos_pass_with_plans_def, optimise_with_plan_def, no_optimise_pass_def]
+  \\ Induct_on ‘plan’
+  >- fs[optimise_with_plan_empty_sing, no_optimise_pass_def]
+  >- (
+  Cases_on ‘h’
+  \\ fs[optimise_with_plan_def, perform_rewrites_def]
+  \\ Cases_on ‘optimise_with_plan cfg plan (perform_rewrites cfg q r (Let x e1 e2))’
+  \\ fs[no_optimise_pass_def, no_optimisations_def]
+  \\ Induct_on ‘r’
+  \\ rpt strip_tac
+  \\ fs[optimise_with_plan_empty_sing, perform_rewrites_def]
+  \\ Cases_on ‘q’ \\  fs[perform_rewrites_def]
+  \\ drule optimise_with_plan_let
+  \\ fs[]
+  )
 QED
 
 Triviality v_size_ALOOKUP:
