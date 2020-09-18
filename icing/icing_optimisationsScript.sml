@@ -106,7 +106,7 @@ End
 
 Definition fp_times_three_to_add_def:
   (* 3.0 is 4613937818241073152 in binary representation *)
-  fp_times_three_to_add = (Binop FP_Mul (Var 0) (Word (3w: word64)),
+  fp_times_three_to_add = (Binop FP_Mul (Var 0) (Word (4613937818241073152w: word64)),
                            Binop FP_Add (Binop FP_Add (Var 0) (Var 0)) (Var 0))
 End
 
@@ -124,7 +124,7 @@ Definition fp_times_one_def:
 End
 
 Definition fp_times_into_div_def:
-  fp_times_into_div = (Binop FP_Mul (Binop FP_Div (Var 0) (Var 1)) (Var 2), Binop FP_Div (Binop FP_Mul (Var 0) (Var 1)) (Var 1))
+  fp_times_into_div = (Binop FP_Mul (Binop FP_Div (Var 0) (Var 1)) (Var 2), Binop FP_Div (Binop FP_Mul (Var 0) (Var 2)) (Var 1))
 End
 
 Definition fp_same_sub_def:

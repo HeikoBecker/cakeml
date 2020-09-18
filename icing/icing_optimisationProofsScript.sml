@@ -9,7 +9,7 @@
   icing_optimisationsLib and the general theorems from
   source_to_sourceProofsScript.
 *)
-open bossLib;
+open bossLib ml_translatorLib;
 open semanticPrimitivesTheory evaluatePropsTheory;
 open fpValTreeTheory fpSemPropsTheory fpOptTheory fpOptPropsTheory
      icing_optimisationsTheory icing_rewriterTheory source_to_sourceProofsTheory
@@ -62,6 +62,11 @@ fun prove_cases_thm r =
   \\ rpt strip_tac
   \\ rveq \\ fs[] \\ rpt (pop_assum mp_tac)
   \\ EVAL_TAC \\ fs[];
+
+(** Automatically proves the cases theorem for rewrite r that is defined as the reverse of rewrite r_rev **)
+fun prove_cases_reverse_thm r r_rev =
+  fs[r, reverse_tuple_def, r_rev]
+  \\ prove_cases_thm r
 
 Theorem rwAllWordTree_comp_left:
   ! b v1 v2 vres insts rws.
@@ -156,6 +161,18 @@ Proof
   prove_cases_thm fp_sub_add_def
 QED
 
+Theorem fp_add_sub_cases:
+∀ e.
+    (∃ e1 e2.
+      e = App (FP_bop FP_Add) [e1; App (FP_uop FP_Neg) [e2]] ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_add_sub] (App (FP_bop FP_Add) [e1; App (FP_uop FP_Neg) [e2]])  =
+        App (FP_bop FP_Sub) [e1; e2]) ∨
+    (rewriteFPexp [fp_add_sub] e = e)
+Proof
+  prove_cases_reverse_thm fp_add_sub_def fp_sub_add_def
+QED
+
 Theorem fp_neg_push_mul_r_cases:
   ∀ e.
     (∃ e1 e2 e3.
@@ -167,6 +184,169 @@ Theorem fp_neg_push_mul_r_cases:
     (rewriteFPexp [fp_neg_push_mul_r] e = e)
 Proof
   prove_cases_thm fp_neg_push_mul_r_def
+QED
+
+Theorem fp_times_zero_cases:
+  ∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 0w)]]) ∧
+      isPureExp (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 0w)]]) ∧
+      rewriteFPexp [fp_times_zero] e =
+        (App FpFromWord [Lit (Word64 0w)])) ∨
+    (rewriteFPexp [fp_times_zero] e = e)
+Proof
+  prove_cases_thm fp_times_zero_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+QED
+
+Theorem fp_times_one_cases:
+  ∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 4607182418800017408w)]]) ∧
+      isPureExp (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 4607182418800017408w)]]) ∧
+      rewriteFPexp [fp_times_one] e = e1) ∨
+    (rewriteFPexp [fp_times_one] e = e)
+Proof
+  prove_cases_thm fp_times_one_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+  \\ fs[substAdd_def, substUpdate_def] \\ rveq
+  \\ fs[substLookup_def]
+QED
+
+Theorem fp_times_minus_one_neg_cases:
+  ∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 13830554455654793216w)]]) ∧
+      isPureExp (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 13830554455654793216w)]]) ∧
+      rewriteFPexp [fp_times_minus_one_neg] e = App (FP_uop FP_Neg) [e1]) ∨
+    (rewriteFPexp [fp_times_minus_one_neg] e = e)
+Proof
+  prove_cases_thm fp_times_minus_one_neg_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+  \\ fs[substAdd_def, substUpdate_def] \\ rveq
+  \\ fs[substLookup_def]
+QED
+
+Theorem fp_neg_times_minus_one_cases:
+  ∀ e.
+    (∃ e1.
+      e = App (FP_uop FP_Neg) [e1] ∧
+      isPureExp (App (FP_uop FP_Neg) [e1]) ∧
+      rewriteFPexp [fp_neg_times_minus_one] e = (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 13830554455654793216w)]])) ∨
+    (rewriteFPexp [fp_neg_times_minus_one] e = e)
+Proof
+  prove_cases_reverse_thm fp_neg_times_minus_one_def fp_times_minus_one_neg_def
+QED
+
+Theorem fp_times_two_to_add_cases:
+  ∀ e.
+    (∃ e1 e2.
+       e = App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 4611686018427387904w)]] ∧
+       isPureExp e ∧
+       rewriteFPexp [fp_times_two_to_add] e  =
+       App (FP_bop FP_Add) [e1; e1]) ∨
+    (rewriteFPexp [fp_times_two_to_add] e = e)
+Proof
+  prove_cases_thm fp_times_two_to_add_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+  \\ fs[substAdd_def, substUpdate_def] \\ rveq
+  \\ fs[substLookup_def]
+QED
+
+Theorem fp_times_three_to_add_cases:
+  ∀ e.
+    (∃ e1 e2.
+       e = App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 4613937818241073152w)]] ∧
+       isPureExp e ∧
+       rewriteFPexp [fp_times_three_to_add] e  =
+       App (FP_bop FP_Add) [App (FP_bop FP_Add) [e1; e1]; e1]) ∨
+    (rewriteFPexp [fp_times_three_to_add] e = e)
+Proof
+  prove_cases_thm fp_times_three_to_add_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+  \\ fs[substAdd_def, substUpdate_def] \\ rveq
+  \\ fs[substLookup_def]
+QED
+
+Theorem fp_plus_zero_cases:
+  ∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Add) [e1; App FpFromWord [Lit (Word64 0w)]]) ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_plus_zero] e = e1) ∨
+    (rewriteFPexp [fp_plus_zero] e = e)
+Proof
+  prove_cases_thm fp_plus_zero_def
+  \\ rpt strip_tac
+  \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ fs[NULL_EQ]
+  \\ fs[substAdd_def, substUpdate_def] \\ rveq
+  \\ fs[substLookup_def]
+QED
+
+Theorem fp_times_into_div_cases:
+    ∀ e.
+    (∃ e1 e2 e3.
+      e = App (FP_bop FP_Mul) [ App (FP_bop FP_Div) [e1; e2]; e3] ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_times_into_div] e = App (FP_bop FP_Div) [ App (FP_bop FP_Mul) [e1; e3]; e2]) ∨
+    (rewriteFPexp [fp_times_into_div] e = e)
+Proof
+  prove_cases_thm fp_times_into_div_def
+QED
+
+Theorem fp_same_sub_cases:
+∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Sub) [e1; e1]) ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_same_sub] e = App FpFromWord [Lit (Word64 0w)]) ∨
+    (rewriteFPexp [fp_same_sub] e = e)
+Proof
+  prove_cases_thm fp_same_sub_def
+QED
+
+Theorem fp_same_div_cases:
+∀ e.
+    (∃ e1.
+      e = (App (FP_bop FP_Div) [e1; e1]) ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_same_div] e = App FpFromWord [Lit (Word64 4607182418800017408w)]) ∨
+    (rewriteFPexp [fp_same_div] e = e)
+Proof
+  prove_cases_thm fp_same_div_def
+QED
+
+Theorem fp_distribute_gen_cases:
+∀ e fpBopInner fpBopOuter.
+    (∃ e1 e2 e3.
+      e = App (FP_bop fpBopOuter) [ App (FP_bop fpBopInner) [e1; e2]; App (FP_bop fpBopInner) [e3; e2]] ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_distribute_gen fpBopInner fpBopOuter] e = App (FP_bop fpBopInner) [ App (FP_bop fpBopOuter) [e1; e3]; e2]) ∨
+    (rewriteFPexp [fp_distribute_gen fpBopInner fpBopOuter] e = e)
+Proof
+  prove_cases_thm fp_distribute_gen_def
+QED
+
+Theorem fp_undistribute_gen_cases:
+∀ e fpBopInner fpBopOuter.
+    (∃ e1 e2 e3.
+      e = App (FP_bop fpBopInner) [ App (FP_bop fpBopOuter) [e1; e3]; e2] ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_undistribute_gen fpBopInner fpBopOuter] e = App (FP_bop fpBopOuter) [ App (FP_bop fpBopInner) [e1; e2]; App (FP_bop fpBopInner) [e3; e2]]) ∨
+    (rewriteFPexp [fp_undistribute_gen fpBopInner fpBopOuter] e = e)
+Proof
+  prove_cases_reverse_thm fp_undistribute_gen_def fp_distribute_gen_def
 QED
 
 (** Define some simplified versions of theorems that make it
@@ -462,6 +642,36 @@ Proof
   \\ Cases_on ‘f = f'’ \\ fs[] \\ rveq
   \\ EVAL_TAC
 QED
+
+Theorem fp_assoc2_gen_cases:
+  ∀ e fpBop.
+    (∃ e1 e2 e3.
+       e = (App (FP_bop fpBop) [e1; (App (FP_bop fpBop) [e2; e3])]) ∧
+       isPureExp e ∧
+       rewriteFPexp [fp_assoc2_gen fpBop] (App (FP_bop fpBop) [e1; (App (FP_bop fpBop) [e2; e3])]) =
+       (App (FP_bop fpBop) [App (FP_bop fpBop) [e1; e2]; e3])) ∨
+    (rewriteFPexp [fp_assoc2_gen fpBop] e = e)
+Proof
+  rpt gen_tac \\ Cases_on `e`
+  \\ fs[fp_assoc2_gen_def, reverse_tuple_def, fp_assoc_gen_def, rewriteFPexp_def, isPureExp_def, matchesFPexp_def]
+  \\ rename1 `App op els`
+  \\ Cases_on `op` \\ fs[isPureOp_def]
+  \\ Cases_on ‘els’ \\ fs[]
+  \\ Cases_on ‘t’ \\ fs[]
+  \\ Cases_on ‘t'’ \\ fs[]
+  \\ Cases_on ‘fpBop = f’ \\ fs[]
+  \\ Cases_on ‘isPureExpList [h;h']’ \\ fs[isPureExp_def]
+  \\ fs[substLookup_def]
+  \\ Cases_on ‘h'’ \\ fs[]
+  \\ Cases_on ‘o'’ \\ fs[]
+  \\ Cases_on ‘l’ \\ fs[]
+  \\ Cases_on ‘t’ \\ fs[]
+  \\ Cases_on ‘t'’ \\ fs[]
+  \\ fs[isPureExp_def]
+  \\ Cases_on ‘f = f'’ \\ fs[] \\ rveq
+  \\ EVAL_TAC
+QED
+
 
 Theorem fp_assoc_gen_real_id:
   ∀ fpBop st1 st2 env e r.
@@ -953,6 +1163,90 @@ Proof
     )
   )
 QED
+  \\ rename_each [‘fp_translate v3 = SOME (FP_WordTree w3_temp)’,
+                  ‘fp_translate v1op2 = SOME (FP_WordTree w1op2_temp)’,
+                  ‘fp_translate v2 = SOME (FP_WordTree w2_temp)’,
+                  ‘fp_translate v1 = SOME (FP_WordTree w1_temp)’]
+  \\ rename_each [‘fp_translate v3 = SOME (FP_WordTree w3)’,
+                  ‘fp_translate v1op2 = SOME (FP_WordTree w1op2)’,
+                  ‘fp_translate v2 = SOME (FP_WordTree w2)’,
+                  ‘fp_translate v1 = SOME (FP_WordTree w1)’]
+  \\ qpat_assum ‘evaluate _ _ [e1] = _’
+                  (mp_then Any mp_tac isPureExp_evaluate_change_oracle)
+  \\ disch_then (
+     qspecl_then [
+         ‘fp_assoc2_gen fpBop’,
+         ‘st1 with fp_state := st1.fp_state with
+                                  <| opts := st1N.fp_state.opts;
+                                     choices :=
+                                     st1.fp_state.choices +
+                                     (st1N.fp_state.choices - st1.fp_state.choices) +
+                                     (st1.fp_state.choices + (st2N.fp_state.choices - st1N.fp_state.choices)) - st1.fp_state.choices |>’,
+         ‘λ x. if (x = 1) then
+                 [RewriteApp Here (LENGTH st1.fp_state.rws + 1)]
+                 ++
+                 (case
+                 do_fprw (Rval (FP_WordTree (fp_bop fpBop w1 w2)))
+                         (st3N.fp_state.opts 0) st3N.fp_state.rws of
+                 | NONE => []
+                 | SOME _ =>
+                     (MAP (λ x. case x of | RewriteApp p id => RewriteApp (Left p) id) (st3N.fp_state.opts 0)))
+                 ++
+                 (case
+                 do_fprw (Rval (FP_WordTree (fp_bop fpBop w1op2 w3)))
+                         (st3N.fp_state.opts 1) st3N.fp_state.rws
+                 of
+                 | NONE => []
+                 | SOME _ => st3N.fp_state.opts 1)
+               else []’
+       ] mp_tac)
+  \\ fs[isPureExp_def]
+  \\ strip_tac
+  \\ ‘~st2N.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ qpat_assum ‘evaluate _ _ [e2] = _’
+                (mp_then Any mp_tac isPureExp_evaluate_change_oracle)
+  \\ disch_then (
+    qspecl_then [
+        ‘fp_assoc2_gen fpBop’,
+        ‘st1’,
+        ‘oracle’] mp_tac)
+  \\ fs[isPureExp_def]
+  \\ impl_tac >- fp_inv_tac
+  \\ strip_tac
+  \\ pop_assum (mp_then Any (qspec_then ‘st1.fp_state.choices + (st1N.fp_state.choices − st1.fp_state.choices)’ assume_tac) (CONJUNCT1 evaluate_add_choices))
+  \\ qpat_assum ‘evaluate _ _ [e3] = _’
+                (mp_then Any mp_tac isPureExp_evaluate_change_oracle)
+  \\ disch_then (
+    qspecl_then [
+        ‘fp_assoc2_gen fpBop’,
+        ‘st1’,
+        ‘oracle'’] mp_tac)
+  \\ fs[isPureExp_def]
+  \\ strip_tac
+  \\ pop_assum (mp_then Any (qspec_then ‘st1.fp_state.choices’ assume_tac) (CONJUNCT1 evaluate_add_choices))
+  \\ qexists_tac ‘oracle''’
+  \\ qexists_tac ‘st1.fp_state.choices’
+  \\ simp[evaluate_def]
+  \\ simp[REVERSE_DEF, astTheory.getOpClass_def, astTheory.isFpBool_def,
+          Once evaluate_cons, evaluate_case_case]
+  \\ fs (shift_fp_opts_def :: state_eqs)
+  \\ pop_assum kall_tac
+  \\ ‘st1.fp_state.rws = st1N.fp_state.rws’ by fp_inv_tac
+  \\ pop_assum (fs o single)
+  (*\\ pop_assum kall_tac *)
+  \\ ‘st1N.fp_state.rws = st2N.fp_state.rws’ by fp_inv_tac
+  \\ pop_assum (fs o single)
+  \\ simp[do_app_def]
+  \\ simp[Once do_fprw_def, rwAllWordTree_def, fp_translate_def]
+  \\ simp[Once do_fprw_def, rwAllWordTree_def, fp_translate_def]
+  \\ fs state_eqs
+  \\ Cases_on ‘rwAllWordTree (oracle 0) (st2N.fp_state.rws ++ [fp_assoc2_gen fpBop]) (fp_bop fpBop w2 w3)’
+  \\ fs[]
+  >- (
+  simp[evaluate_def]
+  )
+QED
+*)
 
 Theorem fp_fma_intro_correct:
   ∀ st1 st2 env e r.
