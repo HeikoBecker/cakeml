@@ -640,6 +640,37 @@ Definition apply_distributivity_def:
                           ) cfg e
 End
 
+Definition try_rewrite_with_each_def:
+  try_rewrite_with_each [] e = (e, []) ∧
+  try_rewrite_with_each ((left, right)::rest) e =
+  case (matchesFPexp left e []) of
+  | SOME _ =>
+      (let rewritten = rewriteFPexp [(left, right)] e in
+        let (rewritten_with_rest, rest_plan) = try_rewrite_with_each rest rewritten in
+          (rewritten_with_rest, (Here, [(left, right)])::rest_plan))
+  | NONE => try_rewrite_with_each rest e
+End
+
+Definition peephole_optimise_def:
+  peephole_optimise cfg e =
+  post_order_dfs_for_plan (λ (cfg: config) e.
+                             let (rewritten, plan) = try_rewrite_with_each [
+                                 fp_neg_push_mul_r;
+                                 fp_times_minus_one_neg;
+                                 fp_fma_intro;
+                                 fp_add_sub;
+                                 fp_times_two_to_add;
+                                 fp_times_three_to_add;
+                                 fp_times_zero;
+                                 fp_plus_zero;
+                                 fp_times_one;
+                                 fp_same_sub;
+                                 fp_same_div
+                               ] e in
+                               if (plan = []) then NONE else SOME (rewritten, plan)
+                          ) cfg e
+End
+
 Definition compose_plan_generation_def:
   compose_plan_generation [] e = (λ cfg. (e, [])) ∧
   compose_plan_generation ((generator: config -> exp -> (exp # fp_plan))::rest) e =
@@ -659,7 +690,8 @@ Definition generate_plan_exp_def:
                                                      apply_distributivity;
                                                      canonicalize;
                                                      optimise_linear_interpolation;
-                                                     canonicalize
+                                                     canonicalize;
+                                                     peephole_optimise
                                                    ] e cfg)
 End
 
