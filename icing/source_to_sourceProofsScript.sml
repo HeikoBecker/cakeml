@@ -4,7 +4,7 @@
 open icing_rewriterTheory source_to_sourceTheory fpOptTheory fpOptPropsTheory
      fpSemPropsTheory semanticPrimitivesTheory evaluateTheory
      semanticsTheory semanticsPropsTheory
-     evaluatePropsTheory terminationTheory fpSemPropsTheory;
+     evaluatePropsTheory terminationTheory fpSemPropsTheory mllistTheory;
      local open ml_progTheory in end;
 open preamble;
 
@@ -639,24 +639,21 @@ Definition is_optimise_correct_def:
            <| rws := st2.fp_state.rws ++ rws; opts := fpOptR; choices := choicesR |>, Rval r))
 End
 
-Definition flatten_def:
-  flatten [] (acc: α list) = acc ∧
-  flatten (x::rest) acc = flatten rest (x ++ acc)
-End
-
 Definition is_optimise_with_plan_correct_def:
-  is_optimise_with_plan_correct rws plan (st1:'a semanticPrimitives$state) st2 env cfg exps r =
-    (evaluate st1 env
-             (MAP (optimise_with_plan cfg plan) exps) = (st2, Rval r) ∧
-    (cfg.canOpt ⇔ st1.fp_state.canOpt = FPScope Opt) ∧
-    st1.fp_state.canOpt ≠ Strict ∧
-    rws = flatten (MAP SND plan) [] ∧
-    (~ st1.fp_state.real_sem) ==>
-    ∃ fpOpt choices fpOptR choicesR.
-      evaluate (st1 with fp_state := st1.fp_state with
-                <| rws := st1.fp_state.rws ++ rws; opts := fpOpt; choices := choices |>) env exps =
-        (st2 with fp_state := st2.fp_state with
-           <| rws := st2.fp_state.rws ++ rws; opts := fpOptR; choices := choicesR |>, Rval r))
+  is_optimise_with_plan_correct rws (st1:'a semanticPrimitives$state) st2 env cfg plan exps r =
+  (evaluate st1 env
+   (MAP (optimise_with_plan cfg plan) exps) = (st2, Rval r) ∧
+   (cfg.canOpt ⇔ st1.fp_state.canOpt = FPScope Opt) ∧
+   st1.fp_state.canOpt ≠ Strict ∧
+   rws = FLAT (MAP SND plan) ∧
+   ((∀ (st1:'a semanticPrimitives$state) st2 env exps r sublist.
+       (∀x. MEM sublist x ⇒ MEM rws x) ∧ is_rewriteFPexp_list_correct sublist st1 st2 env exps r)) ∧
+   (~ st1.fp_state.real_sem) ⇒
+   ∃ fpOpt choices fpOptR choicesR.
+     evaluate (st1 with fp_state := st1.fp_state with
+                                       <| rws := st1.fp_state.rws ++ rws; opts := fpOpt; choices := choices |>) env exps =
+     (st2 with fp_state := st2.fp_state with
+                              <| rws := st2.fp_state.rws ++ rws; opts := fpOptR; choices := choicesR |>, Rval r))
 End
 
 Theorem MAP_FST_optimise:
@@ -1566,6 +1563,106 @@ Proof
   \\ drule optimise_with_plan_let
   \\ fs[]
   )
+QED
+
+
+Theorem genlist_is_all_distinct:
+  ∀ f i. (∀ a b. a ≠ b ⇒ f a ≠ f b) ⇒ ALL_DISTINCT (GENLIST f i)
+Proof
+  fs[ALL_DISTINCT_GENLIST]
+  \\ rpt strip_tac
+  \\ qpat_x_assum ‘∀ a b. _ ⇒ _’ (qspecl_then [‘m1’, ‘m2’] strip_assume_tac)
+  \\ qspecl_then [‘m1 ≠ m2’, ‘f m1 ≠ f m2’] strip_assume_tac (GEN_ALL MONO_NOT_EQ) \\ fs[]
+QED
+
+Theorem FIND_exists:
+  ∀ P l. (∃ x. MEM x l ∧ P x) ⇒ FIND P l ≠ NONE
+Proof
+  Induct_on ‘l’ \\ fs[]
+  \\ rpt strip_tac
+  \\ qpat_x_assum ‘∀P. _ ⇒ _’ (qspec_then ‘P’ assume_tac)
+  \\ fs[FIND_thm] \\ rveq
+  \\ Cases_on ‘P h’ \\ fs[]
+  \\ qpat_x_assum ‘_ ⇒ _’ imp_res_tac
+QED
+
+Theorem longer_and_distinct_exists:
+  ∀ l l'. ALL_DISTINCT l ∧ LENGTH l > LENGTH l' ⇒ ∃ x. MEM x l ∧ ~ MEM x l'
+Proof
+  rpt strip_tac
+  \\ qspec_then ‘set l'’ strip_assume_tac LESS_CARD_DIFF \\ fs[]
+  \\ pop_assum (qspec_then ‘set l’ strip_assume_tac) \\ fs[]
+  \\ rfs[Once ALL_DISTINCT_CARD_LIST_TO_SET]
+  \\ qspec_then ‘l'’ strip_assume_tac (GEN_ALL CARD_LIST_TO_SET)
+  \\ fs[]
+  \\ ‘CARD (set l') < LENGTH l’ by fs[]
+  \\ fs[]
+  \\ ‘CARD (set l) − CARD (set l ∩ set l') = CARD ((set l) DIFF (set l'))’ by fs[CARD_DIFF_EQN]
+  \\ ‘0 < CARD (set l DIFF set l')’ by fs[]
+  \\ ‘(set l DIFF set l') ≠ ∅’ by (
+    qspec_then ‘set l DIFF set l'’ strip_assume_tac CARD_EQ_0
+    \\ ‘FINITE (set l DIFF set l')’ by fs[FINITE_DIFF]
+    \\ qpat_x_assum ‘FINITE _ ⇒ _’ imp_res_tac
+    \\ Cases_on ‘set l DIFF set l' = ∅’ \\ simp[]
+    \\ qpat_x_assum ‘set l DIFF set l' = ∅ ⇒ CARD (set l DIFF set l') = 0’ imp_res_tac
+    \\ pop_assum mp_tac \\ qpat_x_assum ‘0 < CARD (set l DIFF set l')’ mp_tac
+    \\ rpt (pop_assum kall_tac)
+    \\ rpt strip_tac
+    \\ pop_assum (assume_tac o GSYM)
+    \\ decide_tac
+    )
+  \\ qspec_then ‘set l DIFF set l'’ imp_res_tac CHOICE_DEF
+  \\ fs[DIFF_applied]
+  \\ qexists_tac ‘CHOICE (set l DIFF set l')’
+  \\ fs[]
+QED
+
+Theorem all_distinct_MEM_FIND:
+  ∀ l l'. ALL_DISTINCT l ∧ LENGTH l > LENGTH l' ⇒ FIND (λ x. ~MEM x l') l = v ⇒ v ≠ NONE
+Proof
+  rpt strip_tac
+  \\ qspecl_then [‘(λ x. ~MEM x l')’, ‘l’] strip_assume_tac FIND_exists
+  \\ fs[]
+  \\ qspecl_then [‘l’, ‘l'’] imp_res_tac longer_and_distinct_exists
+  \\ qpat_x_assum ‘_ ⇒ _’ imp_res_tac
+QED
+
+Theorem generate_unique_name_some:
+  ∀ identifiers base v. generate_unique_name identifiers base = v ⇒ ∃ x. v = SOME x
+Proof
+  fs[generate_unique_name_def]
+  \\ rpt strip_tac
+  \\ ‘ALL_DISTINCT (GENLIST (λi. STRCAT (STRCAT base "_") (toString i)) (LENGTH identifiers + 1))’ by (
+    qspecl_then [‘(λi. STRCAT (STRCAT base "_") (toString i))’, ‘(LENGTH identifiers + 1)’] strip_assume_tac genlist_is_all_distinct
+    \\ pop_assum irule \\ fs[]
+    )
+  \\ ‘LENGTH (GENLIST (λi. STRCAT (STRCAT base "_") (toString i)) (LENGTH identifiers + 1)) > LENGTH identifiers’ by fs[]
+  \\ qspecl_then [‘(GENLIST (λi. STRCAT (STRCAT base "_") (toString i)) (LENGTH identifiers + 1))’, ‘identifiers’] imp_res_tac all_distinct_MEM_FIND
+  \\ fs[]
+  \\ Cases_on ‘FIND (λx. ~MEM x identifiers)
+               (GENLIST (λi. STRCAT (STRCAT base "_") (toString i))
+                (LENGTH identifiers + 1))’
+  \\ fs[]
+QED
+
+Theorem FIND_result_fulfills:
+  ∀ P l v. FIND P l = SOME v ⇒ P v
+Proof
+  Induct_on ‘l’ \\ fs[]
+  \\ fs[FIND_thm]
+  \\ rpt strip_tac
+  \\ Cases_on ‘P h’ \\ fs[] \\ rveq \\ fs[]
+QED
+
+Theorem generate_unique_name_is_unique:
+  ∀ identifiers base v. generate_unique_name identifiers base = SOME v ⇒ ~ MEM v identifiers
+Proof
+  fs[generate_unique_name_def]
+  \\ rpt strip_tac
+  \\ qspecl_then [‘(λx. ~MEM x identifiers)’,
+                  ‘(GENLIST (λi. STRCAT (STRCAT base "_") (toString i)) (LENGTH identifiers + 1))’,
+                  ‘v’] imp_res_tac FIND_result_fulfills
+  \\ fs[]
 QED
 
 Triviality v_size_ALOOKUP:
