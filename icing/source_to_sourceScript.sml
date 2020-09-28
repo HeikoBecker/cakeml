@@ -421,7 +421,8 @@ End
 
 Definition optimise_with_plan_def:
   optimise_with_plan cfg [] e = e ∧
-  optimise_with_plan cfg ((path, rewrites)::rest) e = optimise_with_plan cfg rest (perform_rewrites cfg path rewrites e)
+  optimise_with_plan cfg ((path, rewrites)::rest) e = optimise_with_plan cfg rest (
+    perform_rewrites (cfg with optimisations := rewrites) path rewrites e)
 End
 
 
@@ -681,6 +682,24 @@ Definition compose_plan_generation_def:
   )
 End
 
+
+Definition balance_expression_tree_def:
+  balance_expression_tree cfg e =
+  post_order_dfs_for_plan (λ (cfg: config) e.
+                             case e of
+                             | (App (FP_bop op) [a; App (FP_bop op') [b; App (FP_bop op'') [c; d]]]) =>
+                                 (if (op = op') ∧ (op' = op'') then
+                                   (let plan = [(Here, [fp_assoc2_gen op])] in
+                                      let optimized = optimise_with_plan cfg plan e in
+                                        SOME (optimized, plan)
+                                   )
+                                 else
+                                   NONE)
+                             | _ => NONE
+                          ) cfg e
+End
+
+
 (**
 We generate the plan for a single expression. This will get more complicated than only canonicalization.
 **)
@@ -691,7 +710,9 @@ Definition generate_plan_exp_def:
                                                      canonicalize;
                                                      optimise_linear_interpolation;
                                                      canonicalize;
-                                                     peephole_optimise
+                                                     peephole_optimise;
+                                                     canonicalize;
+                                                     balance_expression_tree
                                                    ] e cfg)
 End
 
