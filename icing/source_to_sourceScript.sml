@@ -281,7 +281,6 @@ Theorem test__canonicalize = EVAL (
      )
   ’);
 
-
 Definition post_order_dfs_for_plan_def:
   post_order_dfs_for_plan (f: config -> exp -> (exp # fp_plan) option) (cfg: config) (FpOptimise sc e) = (
   let (e_can, plan: fp_plan) = post_order_dfs_for_plan f (cfg with canOpt := if sc = Opt then T else F) e in
@@ -525,7 +524,7 @@ Definition move_multiplicants_to_right_def:
     | (App (FP_bop FP_Mul) [e1; e2]) =>
         (let (updated_e1, other_plan) = move_multiplicants_to_right cfg (m2::rest) e1 in
            let left_plan = MAP_plan_to_path (listIndex 0) other_plan;
-               local_plan = [(Here, [fp_assoc_gen FP_Mul])] in
+               local_plan = [(Here, [fp_assoc_gen FP_Mul]); (ListIndex (1, Here), [fp_comm_gen FP_Mul]) ] in
              let final_e = optimise_with_plan cfg local_plan (App (FP_bop FP_Mul) [updated_e1; e2]) in
                (final_e, plan ++ left_plan ++ local_plan))
     | _ => (updated_e, plan)
@@ -550,6 +549,41 @@ Theorem test__move_multiplicants_to_right = EVAL (
        ])
      )
   ’);
+
+Theorem test__move_multiplicants_to_right2 = EVAL (
+  Parse.Term ‘
+   move_multiplicants_to_right (no_fp_opt_conf with canOpt := T) [(Var (Short "x3")); (Var (Short "x3")); (Var (Short "x3"))] (
+     (
+       App (FP_bop FP_Mul)
+           [Var (Short "x3");
+            App (FP_bop FP_Mul) [Var (Short "x3"); Var (Short "x3")]]
+     )
+     )
+  ’);
+
+Definition canonicalize_for_distributivity_local_def:
+  canonicalize_for_distributivity_local cfg e =
+  case e of
+  | App (FP_bop op) [e1; e2] =>
+      if (op = FP_Add ∨ op = FP_Sub)
+      then
+        let multiplicants1 = top_level_multiplicants e1;
+            multiplicants2 = top_level_multiplicants e2 in
+          let common_multiplicants = intersect_lists multiplicants1 multiplicants2
+          in
+            let (e1_to_right, e1_plan) =
+                move_multiplicants_to_right cfg common_multiplicants e1;
+                (e2_to_right, e2_plan) =
+                move_multiplicants_to_right cfg common_multiplicants e2
+            in
+              let updated_e = App (FP_bop op) [e1_to_right; e2_to_right];
+                  plan = (MAP_plan_to_path (listIndex 0) e1_plan)
+                         ++ (MAP_plan_to_path (listIndex 1) e2_plan) in
+                SOME (updated_e, plan)
+      else
+        NONE
+  | _ => NONE
+End
 
 Definition canonicalize_for_distributivity_def:
   canonicalize_for_distributivity cfg e =
@@ -581,65 +615,182 @@ Theorem test__canonicalize_for_distributivity = EVAL (
   Parse.Term ‘
    canonicalize_for_distributivity no_fp_opt_conf (
      (FpOptimise Opt
-      (App (FP_bop FP_Add) [
-          (App (FP_bop FP_Mul) [
-              Var (Short "a");
-              App (FP_bop FP_Mul) [
-                  Var (Short "b");
-                  App (FP_bop FP_Mul) [
-                      Var (Short "c");
-                      App (FP_bop FP_Mul) [
-                          Var (Short "d");
-                          Var (Short "e")
-                        ]
-                    ]
-                ]
-            ]);
-          (App (FP_bop FP_Mul) [
-              Var (Short "q");
-              App (FP_bop FP_Mul) [
-                  Var (Short "b");
-                  App (FP_bop FP_Mul) [
-                      App (FP_bop FP_Sub) [
-                          App (FP_bop FP_Mul) [
-                              Var (Short "d");
-                              Var (Short "c")
-                            ];
-                          App (FP_bop FP_Mul) [
-                              Var (Short "b");
-                              Var (Short "d")
-                            ]
-                        ];
-                      App (FP_bop FP_Mul) [
-                          Var (Short "d");
-                          Var (Short "d")
-                        ]
-                    ]
-                ]
-            ])
-        ])
+      (App (FP_bop FP_Add)
+        [App (FP_bop FP_Mul)
+         [Var (Short "x3");
+          App (FP_bop FP_Mul)
+              [Var (Short "x3");
+               App (FP_bop FP_Mul)
+                   [Var (Short "x3"); Var (Short "x3")]]];
+         App (FP_bop FP_Add)
+             [App (FP_bop FP_Mul)
+              [Var (Short "x3");
+               App (FP_bop FP_Mul)
+                   [Var (Short "x3"); Var (Short "x3")]];
+              App (FP_bop FP_Add)
+                  [App (FP_bop FP_Mul)
+                   [Var (Short "x3"); Var (Short "x3")];
+                   App (FP_bop FP_Add)
+                       [Var (Short "x3");
+                        App FpFromWord
+                            [Lit (Word64 0x4010000000000000w)]]]]])
+      )
      )
-     )
+     ’);
+
+Theorem test__canonicalize_for_distributivity2 = EVAL (
+  Parse.Term ‘
+   let e = (FpOptimise Opt
+            (App (FP_bop FP_Add)
+             [App (FP_bop FP_Mul)
+              [Var (Short "x3");
+               App (FP_bop FP_Mul)
+                   [Var (Short "x3");
+                    App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")]]];
+              App (FP_bop FP_Add)
+                  [App (FP_bop FP_Mul)
+                   [Var (Short "x3");
+                    App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")]];
+                   App (FP_bop FP_Add)
+                       [App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")];
+                        App (FP_bop FP_Add)
+                            [Var (Short "x3");
+                             App FpFromWord
+                                 [Lit (Word64 0x4010000000000000w)]]]]])
+           ) in
+     let (_, plan) = canonicalize_for_distributivity no_fp_opt_conf e in
+       optimise_with_plan no_fp_opt_conf plan e
   ’);
+
+Definition apply_distributivity_local_def:
+  apply_distributivity_local cfg e =
+  (let (can_e, can_plan) = canonicalize_for_distributivity cfg e in
+     case can_e of
+     | App (FP_bop op) [
+         App (FP_bop op') [e1_1;e1_2];
+         App (FP_bop op'') [e2_1;e2_2]] =>
+         if ((op = FP_Add ∨ op = FP_Sub) ∧ op' = FP_Mul
+             ∧ e1_2 = App (FP_bop op'') [e2_1;e2_2])
+         then
+           (let plan = [(ListIndex (1, Here), [fp_times_one_reverse; fp_comm_gen FP_Mul]);
+                        (Here, [fp_distribute_gen op' op])] in
+              let optimized = optimise_with_plan cfg plan can_e in
+                SOME (optimized, can_plan ++ plan)
+           )
+         else (if ((op = FP_Add ∨ op = FP_Sub) ∧ (op' = FP_Mul ∨ op' = FP_Div) ∧ op'' = op')
+               then
+                 (let plan = [(Here, [fp_distribute_gen op' op])] in
+                    let optimized = optimise_with_plan cfg plan can_e in
+                      SOME (optimized, can_plan ++ plan)
+                 )
+               else NONE)
+     | App (FP_bop op) [
+         App (FP_bop op') [e1_1; e1_2];
+         e2
+       ] => if ((op = FP_Add ∨ op = FP_Sub) ∧ op' = FP_Mul ∧ e1_2 = e2)
+            then
+              (let plan = [(ListIndex (1, Here), [fp_times_one_reverse; fp_comm_gen op']);
+                           (Here, [fp_distribute_gen op' op])] in
+                 let optimized = optimise_with_plan cfg plan can_e in
+                   SOME (optimized, can_plan ++ plan)
+              )
+            else NONE
+     | _ => NONE)
+End
 
 Definition apply_distributivity_def:
   apply_distributivity cfg e =
   post_order_dfs_for_plan (λ cfg e.
-                             let (can_e, can_plan) = canonicalize_for_distributivity cfg e in
-                               case can_e of
-                               | App (FP_bop op) [
-                                   App (FP_bop op') [e1_1;e1_2];
-                                   App (FP_bop op'') [e2_1;e2_2]] =>
-                                   if ((op = FP_Add ∨ op = FP_Sub) ∧ (op' = FP_Mul ∨ op' = FP_Div) ∧ op'' = op')
-                                   then
-                                     (let plan = [(Here, [fp_distribute_gen op' op])] in
-                                        let optimized = optimise_with_plan cfg plan can_e in
-                                          SOME (optimized, can_plan ++ plan)
-                                     )
-                                   else NONE
-                               | _ => NONE
+                             case e of
+                             | App (FP_bop FP_Add) [e1; App (FP_bop FP_Add) [e2_1; e2_2]] =>
+                                 (let e1_new = App (FP_bop FP_Add) [e1; e2_1];
+                                      e2_new = e2_2;
+                                      pre_plan = [(Here, [fp_assoc2_gen FP_Add])] in
+                                    (let (e1_can, e1_plan) = (canonicalize_for_distributivity cfg e1_new);
+                                         (e2_can, e2_plan) = (canonicalize_for_distributivity cfg e2_new) in
+                                       case (apply_distributivity_local cfg e1_can) of
+                                       | SOME (e1_can_dist, e1_dist_plan) =>
+                                           (case (apply_distributivity_local cfg e2_can) of
+                                            | SOME (e2_can_dist, e2_dist_plan) =>
+                                                (let e_here = App (FP_bop FP_Add) [e1_can_dist; e2_can_dist];
+                                                     plan_here = pre_plan
+                                                                 ++ (MAP_plan_to_path (listIndex 0) e1_plan)
+                                                                 ++ (MAP_plan_to_path (listIndex 1) e2_plan)
+                                                                 ++ (MAP_plan_to_path (listIndex 0) e1_dist_plan)
+                                                                 ++ (MAP_plan_to_path (listIndex 1) e2_dist_plan) in
+                                                   let (e_here_can, e_here_can_plan) = canonicalize_for_distributivity cfg e_here in
+                                                     (case apply_distributivity_local cfg e_here of
+                                                      | SOME (e_here_local, e_here_local_plan) =>
+                                                          SOME (e_here_local, plan_here ++ e_here_can_plan ++ e_here_local_plan)
+                                                      | NONE => SOME (e_here, plan_here)))
+                                            | NONE => (let e_here = App (FP_bop FP_Add) [e1_can_dist; e2_can];
+                                                           plan_here = pre_plan
+                                                                       ++ (MAP_plan_to_path (listIndex 0) e1_plan)
+                                                                       ++ (MAP_plan_to_path (listIndex 1) e2_plan)
+                                                                       ++ (MAP_plan_to_path (listIndex 0) e1_dist_plan) in
+                                                         let (e_here_can, e_here_can_plan) = canonicalize_for_distributivity cfg e_here in
+                                                           (case apply_distributivity_local cfg e_here of
+                                                            | SOME (e_here_local, e_here_local_plan) =>
+                                                                SOME (e_here_local, plan_here ++ e_here_can_plan ++ e_here_local_plan)
+                                                            | NONE => SOME (e_here, plan_here)))
+                                           )
+                                       | NONE => apply_distributivity_local cfg e
+                                    ))
+                             | _ => apply_distributivity_local cfg e
                           ) cfg e
 End
+
+Theorem test__apply_distributivity = EVAL (
+  Parse.Term ‘
+   apply_distributivity no_fp_opt_conf (
+     (FpOptimise Opt
+      (App (FP_bop FP_Add)
+           [App (FP_bop FP_Mul)
+              [App (FP_bop FP_Add)
+                 [App (FP_bop FP_Mul)
+                    [App (FP_bop FP_Add)
+                       [App (FP_bop FP_Mul)
+                          [Var (Short "x3"); Var (Short "x3")];
+                        App (FP_bop FP_Add)
+                          [Var (Short "x3");
+                           App FpFromWord [Lit (Word64 0x3FF0000000000000w)]]];
+                     Var (Short "x3")];
+                  App FpFromWord [Lit (Word64 0x3FF0000000000000w)]];
+               Var (Short "x3")];
+            App FpFromWord [Lit (Word64 0x4010000000000000w)]])
+     )
+     )
+  ’);
+
+Theorem test__apply_distributivity2 = EVAL (
+  Parse.Term ‘
+   let e = (FpOptimise Opt
+            (App (FP_bop FP_Add)
+             [App (FP_bop FP_Mul)
+              [Var (Short "x3");
+               App (FP_bop FP_Mul)
+                   [Var (Short "x3");
+                    App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")]]];
+              App (FP_bop FP_Add)
+                  [App (FP_bop FP_Mul)
+                   [Var (Short "x3");
+                    App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")]];
+                   App (FP_bop FP_Add)
+                       [App (FP_bop FP_Mul)
+                        [Var (Short "x3"); Var (Short "x3")];
+                        App (FP_bop FP_Add)
+                            [Var (Short "x3");
+                             App FpFromWord
+                                 [Lit (Word64 0x4010000000000000w)]]]]])) in
+     let (_, plan) = apply_distributivity no_fp_opt_conf e in
+       optimise_with_plan no_fp_opt_conf plan e
+  ’);
+
 
 Definition try_rewrite_with_each_def:
   try_rewrite_with_each [] e = (e, []) ∧
@@ -699,6 +850,16 @@ Definition balance_expression_tree_def:
                           ) cfg e
 End
 
+Definition phase_repeater_def:
+  phase_repeater 0 (generator: config -> exp -> (exp # fp_plan)) = generator ∧
+  phase_repeater (SUC fuel) generator = (λ cfg e.
+                                           let (e_upd, plan) = generator cfg e in
+                                             if (e_upd ≠ e) then
+                                               let (e_final, rest_plan) = (phase_repeater fuel generator) cfg e_upd in
+                                                 (e_final, plan ++ rest_plan)
+                                             else (e_upd, plan)
+                                        )
+End
 
 (**
 We generate the plan for a single expression. This will get more complicated than only canonicalization.
@@ -706,7 +867,7 @@ We generate the plan for a single expression. This will get more complicated tha
 Definition generate_plan_exp_def:
   generate_plan_exp (cfg: config) (e: exp) = SND (compose_plan_generation [
                                                      canonicalize;
-                                                     apply_distributivity;
+                                                     (phase_repeater 100 apply_distributivity);
                                                      canonicalize;
                                                      optimise_linear_interpolation;
                                                      canonicalize;
@@ -843,13 +1004,14 @@ End
 
 val test_code =
 (** REPLACE AST BELOW THIS LINE **)
-“[Dlet unknown_loc (Pvar "rigidBody")
-(Fun "x1" (Fun "x2" (Fun "x3" (FpOptimise Opt
-(App (FP_bop FP_Sub)
+“[Dlet unknown_loc (Pvar "out2")
+(Fun "x1" (Fun "x2" (Fun "x3" 
+(FpOptimise Opt
+(App (FP_bop FP_Add)
   [
     (App (FP_bop FP_Add)
     [
-      (App (FP_bop FP_Sub)
+      (App (FP_bop FP_Add)
       [
         (App (FP_bop FP_Add)
         [
@@ -859,10 +1021,10 @@ val test_code =
             [
               (App (FP_bop FP_Mul)
               [
-                (App FpFromWord [Lit (Word64 (4611686018427387904w:word64))]);
-                Var (Short  "x1")
+                Var (Short  "x3");
+                Var (Short  "x3")
               ]);
-              Var (Short  "x2")
+              Var (Short  "x3")
             ]);
             Var (Short  "x3")
           ]);
@@ -870,7 +1032,7 @@ val test_code =
           [
             (App (FP_bop FP_Mul)
             [
-              (App FpFromWord [Lit (Word64 (4613937818241073152w:word64))]);
+              Var (Short  "x3");
               Var (Short  "x3")
             ]);
             Var (Short  "x3")
@@ -878,31 +1040,14 @@ val test_code =
         ]);
         (App (FP_bop FP_Mul)
         [
-          (App (FP_bop FP_Mul)
-          [
-            (App (FP_bop FP_Mul)
-            [
-              Var (Short  "x2");
-              Var (Short  "x1")
-            ]);
-            Var (Short  "x2")
-          ]);
+          Var (Short  "x3");
           Var (Short  "x3")
         ])
       ]);
-      (App (FP_bop FP_Mul)
-      [
-        (App (FP_bop FP_Mul)
-        [
-          (App FpFromWord [Lit (Word64 (4613937818241073152w:word64))]);
-          Var (Short  "x3")
-        ]);
-        Var (Short  "x3")
-      ])
+      Var (Short  "x3")
     ]);
-    Var (Short  "x2")
+    (App FpFromWord [Lit (Word64 (4616189618054758400w:word64))])
   ])))))]”
-
 
 Definition theAST_def:
   theAST =
@@ -933,69 +1078,35 @@ Theorem only_opt_body = EVAL (
   Parse.Term ‘
    compose_plan_generation [
        canonicalize;
-       apply_distributivity;
-       canonicalize;
-       optimise_linear_interpolation;
-       canonicalize
+      (* apply_distributivity; *)
      ] (
      (FpOptimise Opt
-      (App (FP_bop FP_Sub)
+      (App (FP_bop FP_Add)
        [
-         (App (FP_bop FP_Add)
+         (App (FP_bop FP_Mul)
           [
-            (App (FP_bop FP_Sub)
-             [
-               (App (FP_bop FP_Add)
-                [
-                  (App (FP_bop FP_Mul)
-                   [
-                     (App (FP_bop FP_Mul)
-                      [
-                        (App (FP_bop FP_Mul)
-                         [
-                           (App FpFromWord [Lit (Word64 (4611686018427387904w:word64))]);
-                           Var (Short  "x1")
-                         ]);
-                        Var (Short  "x2")
-                      ]);
-                     Var (Short  "x3")
-                   ]);
-                  (App (FP_bop FP_Mul)
-                   [
-                     (App (FP_bop FP_Mul)
-                      [
-                        (App FpFromWord [Lit (Word64 (4613937818241073152w:word64))]);
-                        Var (Short  "x3")
-                      ]);
-                     Var (Short  "x3")
-                   ])
-                ]);
-               (App (FP_bop FP_Mul)
-                [
-                  (App (FP_bop FP_Mul)
-                   [
-                     (App (FP_bop FP_Mul)
-                      [
-                        Var (Short  "x2");
-                        Var (Short  "x1")
-                      ]);
-                     Var (Short  "x2")
-                   ]);
-                  Var (Short  "x3")
-                ])
-             ]);
             (App (FP_bop FP_Mul)
              [
                (App (FP_bop FP_Mul)
                 [
-                  (App FpFromWord [Lit (Word64 (4613937818241073152w:word64))]);
+                  Var (Short  "x3");
                   Var (Short  "x3")
                 ]);
                Var (Short  "x3")
-             ])
+             ]);
+            Var (Short  "x3")
           ]);
-         Var (Short  "x2")
-       ]))
+         (App (FP_bop FP_Mul)
+          [
+            (App (FP_bop FP_Mul)
+             [
+               Var (Short  "x3");
+               Var (Short  "x3")
+             ]);
+            Var (Short  "x3")
+          ])
+       ])
+     )
      ) theOpts’
   );
 
