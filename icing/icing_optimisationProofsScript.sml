@@ -217,6 +217,17 @@ Proof
   \\ fs[substLookup_def]
 QED
 
+Theorem fp_times_one_reverse_cases:
+  ∀ e.
+    (∃ e1.
+      e = e1 ∧
+      isPureExp e ∧
+      rewriteFPexp [fp_times_one_reverse] e = (App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 4607182418800017408w)]])) ∨
+    (rewriteFPexp [fp_times_one_reverse] e = e)
+Proof
+  prove_cases_reverse_thm fp_times_one_reverse_def fp_times_one_def
+QED
+
 Theorem fp_times_minus_one_neg_cases:
   ∀ e.
     (∃ e1.
