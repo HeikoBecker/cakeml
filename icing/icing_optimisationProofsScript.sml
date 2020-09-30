@@ -13,7 +13,7 @@ open bossLib ml_translatorLib;
 open semanticPrimitivesTheory evaluatePropsTheory;
 open fpValTreeTheory fpSemPropsTheory fpOptTheory fpOptPropsTheory
      icing_optimisationsTheory icing_rewriterTheory source_to_sourceProofsTheory
-     terminationTheory;
+     terminationTheory binary_ieeeTheory;
 
 open preamble;
 
@@ -300,9 +300,9 @@ Proof
   prove_cases_thm fp_plus_zero_def
   \\ rpt strip_tac
   \\ fs[CaseEq"option", CaseEq"prod", CaseEq"list", CaseEq"lit"]
+  \\ rveq
   \\ fs[NULL_EQ]
-  \\ fs[substAdd_def, substUpdate_def] \\ rveq
-  \\ fs[substLookup_def]
+  \\ fs[substLookup_def, substAdd_def, substUpdate_def]
 QED
 
 Theorem fp_times_into_div_cases:
@@ -686,9 +686,9 @@ QED
 
 Theorem fp_assoc_gen_real_id:
   ∀ fpBop st1 st2 env e r.
-  fpBop ≠ FP_Sub ∧
-  fpBop ≠ FP_Div ⇒
-  is_real_id_exp [fp_assoc_gen fpBop] st1 st2 env e r
+    fpBop ≠ FP_Sub ∧
+    fpBop ≠ FP_Div ⇒
+    is_real_id_exp [fp_assoc_gen fpBop] st1 st2 env e r
 Proof
   rw[is_real_id_exp_def]
   \\ simp[is_rewriteFPexp_correct_def] \\ rpt strip_tac
@@ -716,6 +716,56 @@ Proof
   simp[state_component_equality,fpState_component_equality]>>
   EVAL_TAC>>simp[]>>
   Cases_on`fpBop`>>fs[source_to_sourceTheory.getRealBop_def]
+  >- metis_tac[realTheory.REAL_ADD_ASSOC]
+  >- metis_tac[realTheory.REAL_MUL_ASSOC]
+QED
+
+Theorem fp_assoc2_gen_real_id:
+  ∀ fpBop st1 st2 env e r.
+    fpBop ≠ FP_Sub ∧
+    fpBop ≠ FP_Div ⇒
+    is_real_id_exp [fp_assoc2_gen fpBop] st1 st2 env e r
+Proof
+  rw[is_real_id_exp_def]
+  \\ qspecl_then [‘e’, ‘fpBop’] assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_assoc2_gen_cases)
+  \\ fs[]
+  >- fs[state_component_equality,fpState_component_equality]
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  \\ qpat_x_assum ‘_ = (_, Rval r)’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 6 (TOP_CASE_TAC \\ simp[])
+  \\ IF_CASES_TAC \\ simp[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ simp[do_app_def]
+  \\ Cases_on ‘v’ \\ fs[CaseEq "option"]
+  \\ Cases_on ‘v'’ \\ fs[CaseEq "option"]
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ ‘q'' with <|refs := q''.refs; ffi := q''.ffi|> = q''’ by
+    fs[state_component_equality,fpState_component_equality]
+  \\ fs[]
+  \\ strip_tac
+  \\ ‘q''.fp_state.real_sem’ by fp_inv_tac
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac
+  \\ fs[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ fs[]
+  \\ fs[isPureExp_def]
+  \\ fs[evaluate_def]
+  \\ TOP_CASE_TAC \\ fs[CaseEq "result"]
+  \\ fs[CaseEq "result", CaseEq "list"]
+  \\ fs[evaluate_def]
+  \\ ‘q' with <|refs := q'.refs; ffi := q'.ffi|> = q'’ by
+    fs[state_component_equality,fpState_component_equality]
+  \\ ‘isPureExp (realify e1)’ by fs[isPureExp_realify]
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  \\ fs[source_to_sourceTheory.realify_def]
+  \\ fs[CaseEq "result", CaseEq "list", CaseEq "prod"] \\ rveq
+  \\ ‘q'³'.fp_state.real_sem’ by fp_inv_tac
+  \\ fs[CaseEq "result", CaseEq "list", CaseEq "prod"]
+  \\ qexists_tac ‘q''.fp_state.choices’ \\ simp[state_component_equality, fpState_component_equality]
+  \\ Cases_on ‘fpBop’ \\ fs[source_to_sourceTheory.getRealBop_def]
+  \\ EVAL_TAC
   >- metis_tac[realTheory.REAL_ADD_ASSOC]
   >- metis_tac[realTheory.REAL_MUL_ASSOC]
 QED
@@ -771,6 +821,37 @@ Proof
   metis_tac[realTheory.real_sub]
 QED
 
+Theorem fp_add_sub_real_id:
+  ∀ st1 st2 env e r.
+    is_real_id_exp [fp_add_sub] st1 st2 env e r
+Proof
+  rw[is_real_id_exp_def]
+  \\ qspec_then ‘e’ strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_add_sub_cases)
+  \\ fs[]
+  >- fs[state_component_equality,fpState_component_equality]
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  \\ qpat_x_assum ‘_ = (_, Rval r)’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ IF_CASES_TAC \\ simp[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ simp[do_app_def]
+  \\ Cases_on ‘v’ \\ fs[]
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ ‘q.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v’ \\ fs[] \\ Cases_on ‘v'’ \\ fs[] \\ rveq \\ fs[]
+  >- (
+  rpt strip_tac
+  \\ ‘q with <|refs := q.refs; ffi := q.ffi|> = q’ by fs[state_component_equality,fpState_component_equality]
+  \\ fs[] \\ rveq
+  \\ fs[state_component_equality,fpState_component_equality]
+  \\ EVAL_TAC \\ fs[] \\ metis_tac[realTheory.real_sub]
+  )
+QED
+
 Theorem fp_neg_push_mul_r_real_id:
   ∀ st1 st2 env e r.
    is_real_id_exp [fp_neg_push_mul_r] st1 st2 env e r
@@ -799,6 +880,235 @@ Proof
   EVAL_TAC>>simp[]>>
   fs[state_component_equality,fpState_component_equality]>>
   metis_tac[realTheory.REAL_NEG_LMUL,realTheory.REAL_MUL_COMM]
+QED
+
+Theorem fp_times_zero_real_id:
+  ∀ st1 st2 env e r e1 st1N r1.
+    e = App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 0w)]]
+    ∧ isPureExp e1
+    ∧ evaluate st1 env [realify e1] = (st1N, Rval [Real r1]) ⇒
+    is_real_id_exp [fp_times_zero] st1 st2 env e r
+Proof
+  rpt strip_tac
+  \\ fs[is_real_id_exp_def]
+  \\ qspecl_then [‘e’] strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_times_zero_cases)
+  \\ fs[]
+  \\ rpt strip_tac
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  \\ qpat_x_assum ‘_ = (_, Rval r)’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ rpt strip_tac \\ rveq \\ fs[]
+  \\ fs[do_app_def]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality]
+  \\ pop_assum (fs o single)
+  \\ fs[CaseEq"result", CaseEq"prod", CaseEq"list"]
+  \\ rveq \\ fs[]
+  \\ ‘q.fp_state.real_sem’ by fp_inv_tac \\ rveq \\ fs[]
+  \\ imp_res_tac (GEN_ALL evaluate_realify_state)
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ rfs[] \\ fs[source_to_sourceTheory.realify_def]
+  \\ fs[isPureExp_def, evaluate_def, astTheory.getOpClass_def]
+  \\ fs[do_app_def] \\ fs[evaluate_case_case]
+  \\ ‘q with <|refs := q.refs; ffi := q.ffi|> = q’ by fs[state_component_equality]
+  \\ fs[] \\ rfs[] \\ fs[]
+  \\ fs[EVAL “fp64_to_real 0w”]
+  \\ ‘float_to_real <|Sign := 0w: word1; Exponent := 0w: word11; Significand := 0w: 52 word|> = 0’
+    by (
+    fs[float_to_real]
+    )
+  \\ rw[]
+  \\ qexists_tac ‘q.fp_state.choices’ \\ fs[state_component_equality, fpState_component_equality]
+  \\ fs[realOpsTheory.real_bop_def, source_to_sourceTheory.getRealBop_def]
+QED
+
+Theorem fp_times_zero_real_id_not_applied:
+ ∀ st1 st2 env e r.
+    ¬(∃ e1. e = App (FP_bop FP_Mul) [e1; App FpFromWord [Lit (Word64 0w)]]) ⇒
+    is_real_id_exp [fp_times_zero] st1 st2 env e r
+Proof
+  rpt strip_tac
+  \\ fs[is_real_id_exp_def]
+  \\ qspecl_then [‘e’] strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_times_zero_cases)
+  \\ fs[] \\ rpt strip_tac
+  \\ qexists_tac ‘st2.fp_state.choices’ \\ fs[state_component_equality, fpState_component_equality]
+QED
+
+Theorem fp_distribute_gen_real_id:
+  ∀ fpBopOuter fpBopInner st1 st2 env e r.
+    fpBopOuter ≠ FP_Mul ∧
+    fpBopOuter ≠ FP_Div ∧
+    fpBopInner ≠ FP_Add ∧
+    fpBopInner ≠ FP_Sub ⇒
+    is_real_id_exp [fp_distribute_gen fpBopInner fpBopOuter] st1 st2 env e r
+Proof
+  rpt strip_tac
+  \\ fs[is_real_id_exp_def]
+  \\ qspecl_then [‘e’, ‘fpBopInner’, ‘fpBopOuter’] strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_distribute_gen_cases)
+  \\ fs[]
+  \\ rpt strip_tac
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  >- (qexists_tac ‘st2.fp_state.choices’ \\ fs[state_component_equality, fpState_component_equality])
+  \\ qpat_x_assum ‘_ = (_, Rval r)’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 6 (TOP_CASE_TAC \\ fs[CaseEq"option"])
+  \\ rpt strip_tac \\ rveq \\ fs[]
+  \\ fs[do_app_def]
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v'’ \\ fs[CaseEq"option"] \\ Cases_on ‘v''’ \\ fs[CaseEq"option"]
+  \\ ‘q''.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ Cases_on ‘v’ \\ fs[CaseEq"option"]
+  \\ ‘q' with <|refs := q'.refs; ffi := q'.ffi|> = q'’ by fs[state_component_equality] \\ fs[]
+  \\ fs[isPureExp_def]
+  \\ imp_res_tac (GEN_ALL evaluate_realify_state)
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v’ \\ fs[CaseEq"option"] \\ Cases_on ‘v''’ \\ fs[CaseEq"option"]
+  \\ fs[state_component_equality,fpState_component_equality]
+  \\ fs[realOpsTheory.real_bop_def, source_to_sourceTheory.getRealBop_def]
+  \\ Cases_on ‘fpBopOuter’ \\ fs[source_to_sourceTheory.getRealBop_def]
+  \\ Cases_on ‘fpBopInner’ \\ fs[source_to_sourceTheory.getRealBop_def]
+  \\ metis_tac [realTheory.REAL_ADD_RDISTRIB, realTheory.REAL_SUB_RDISTRIB, realTheory.REAL_DIV_ADD,
+                realTheory.real_div]
+QED
+
+
+Theorem fp_undistribute_gen_real_id:
+∀ fpBopOuter fpBopInner st1 st2 env e r.
+    fpBopOuter ≠ FP_Mul ∧
+    fpBopOuter ≠ FP_Div ∧
+    fpBopInner ≠ FP_Add ∧
+    fpBopInner ≠ FP_Sub ⇒
+    is_real_id_exp [fp_undistribute_gen fpBopInner fpBopOuter] st1 st2 env e r
+Proof
+  rpt strip_tac
+  \\ fs[is_real_id_exp_def]
+  \\ qspecl_then [‘e’, ‘fpBopInner’, ‘fpBopOuter’] strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_undistribute_gen_cases)
+  \\ fs[]
+  \\ rpt strip_tac
+  \\ fs[source_to_sourceTheory.realify_def, evaluate_def, astTheory.getOpClass_def]
+  >- (qexists_tac ‘st2.fp_state.choices’ \\ fs[state_component_equality, fpState_component_equality])
+  \\ qpat_x_assum ‘_ = (_, Rval r)’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 6 (TOP_CASE_TAC \\ fs[CaseEq"option"])
+  \\ rpt strip_tac \\ rveq \\ fs[]
+  \\ fs[do_app_def]
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v’ \\ fs[CaseEq"option"] \\ Cases_on ‘v'’ \\ fs[CaseEq"option"]
+  \\ ‘q' with <|refs := q'.refs; ffi := q'.ffi|> = q'’ by fs[state_component_equality] \\ fs[]
+  \\ fs[isPureExp_def]
+  \\ imp_res_tac (GEN_ALL evaluate_realify_state) \\ rveq \\ fs[]
+  \\ Cases_on ‘evaluate q env [realify e2]’ \\ fs[] \\ rveq \\ fs[]
+  \\ Cases_on ‘evaluate q env [realify e1]’ \\ fs[CaseEq"option"]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘r'³'’ \\ fs[CaseEq"option"]
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v''’ \\ fs[CaseEq"option"] \\ Cases_on ‘v'³'’ \\ fs[CaseEq"option"]
+  \\ rveq \\ fs[]
+  \\ ‘q' with <|refs := q'.refs; ffi := q'.ffi|> = q'’ by fs[state_component_equality] \\ fs[] \\ rveq
+  \\ ‘q'.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ fs[state_component_equality, fpState_component_equality]
+  \\ fs[realOpsTheory.real_bop_def, source_to_sourceTheory.getRealBop_def]
+  \\ Cases_on ‘fpBopOuter’ \\ fs[source_to_sourceTheory.getRealBop_def]
+  \\ Cases_on ‘fpBopInner’ \\ fs[source_to_sourceTheory.getRealBop_def]
+  \\ metis_tac [realTheory.REAL_ADD_RDISTRIB, realTheory.REAL_SUB_RDISTRIB, realTheory.REAL_DIV_ADD,
+                realTheory.real_div]
+QED
+
+
+Theorem fp_plus_zero_real_id:
+  ∀ st1 st2 env e r.
+    is_real_id_exp [fp_plus_zero] st1 st2 env e [Real r]
+Proof
+  rw[is_real_id_exp_def]
+  \\ qspec_then ‘e’ strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_plus_zero_cases)
+  \\ fs[]
+  >- fs[state_component_equality,fpState_component_equality]
+  \\ fs[source_to_sourceTheory.realify_def,evaluate_def,astTheory.getOpClass_def]
+  \\ ‘st2.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ qpat_x_assum ‘_ = (_, Rval [Real r])’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ simp[do_app_def]
+  >- (
+  strip_tac
+  \\ fs[EVAL “do_app (st1.refs,st1.ffi) RealFromFP [Litv (Word64 0w)]”]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality] \\ fs[] \\ rveq
+  \\ fs[]
+  \\ qexists_tac ‘q.fp_state.choices’
+  \\ fs[state_component_equality,fpState_component_equality]
+  \\ fs[EVAL “real_bop (getRealBop FP_Add) (float_to_real <|Sign := (0w :word1); Exponent := (0w :word11); Significand := (0w :52 word)|>) r”]
+  \\ ‘float_to_real <|Sign := 0w: word1; Exponent := 0w: word11; Significand := 0w: 52 word|> = 0’
+    by (
+    fs[float_to_real]
+    )
+  \\ rw[]
+  \\ fs[EVAL “real_bop (getRealBop FP_Add) r 0”]
+  )
+  \\ fs[EVAL “do_app (st1.refs,st1.ffi) RealFromFP [Litv (Word64 0w)]”]
+  \\ fs[CaseEq"result", CaseEq"prod"]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality] \\ fs[]
+QED
+
+Theorem fp_times_one_real_id:
+  ∀ st1 st2 env e r.
+    is_real_id_exp [fp_times_one] st1 st2 env e [Real r]
+Proof
+  rw[is_real_id_exp_def]
+  \\ qspec_then ‘e’ strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_times_one_cases)
+  \\ fs[]
+  >- fs[state_component_equality,fpState_component_equality]
+  \\ fs[source_to_sourceTheory.realify_def,evaluate_def,astTheory.getOpClass_def]
+  \\ ‘st2.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ qpat_x_assum ‘_ = (_, Rval [Real r])’ mp_tac
+  \\ simp[evaluate_case_case]
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ simp[do_app_def]
+  >- (
+  strip_tac
+  \\ fs[EVAL “do_app (st1.refs,st1.ffi) RealFromFP [Litv (Word64 0x3FF0000000000000w)]”]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality] \\ fs[] \\ rveq
+  \\ fs[]
+  \\ qexists_tac ‘q.fp_state.choices’
+  \\ fs[state_component_equality,fpState_component_equality]
+  \\ fs[EVAL “real_bop (getRealBop FP_Mul) (float_to_real <|Sign := (0w :word1); Exponent := (1023w :word11); Significand := (0w :52 word)|>) r”]
+  \\ fs[float_to_real]
+  \\ fs[realOpsTheory.real_bop_def, source_to_sourceTheory.getRealBop_def]
+  \\ rpt strip_tac \\ fs[realTheory.real_div, realTheory.REAL_MUL_LZERO, realTheory.REAL_ADD_RID, realTheory.REAL_MUL_RID, realTheory.REAL_MUL_RINV]
+  )
+  \\ fs[EVAL “do_app (st1.refs,st1.ffi) RealFromFP [Litv (Word64 0x3FF0000000000000w)]”]
+  \\ fs[CaseEq"result", CaseEq"prod"]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality] \\ fs[]
+QED
+
+Theorem fp_times_one_reverse_real_id:
+  ∀ st1 st2 env r.
+    is_real_id_exp [fp_times_one_reverse] st1 st2 env e [Real r]
+Proof
+  rw[is_real_id_exp_def]
+  \\ qspec_then ‘e’ strip_assume_tac (ONCE_REWRITE_RULE [DISJ_COMM] fp_times_one_reverse_cases)
+  \\ fs[]
+  >- fs[state_component_equality,fpState_component_equality]
+  \\ ‘st2.fp_state.real_sem’ by fp_inv_tac \\ fs[]
+  \\ fs[source_to_sourceTheory.realify_def,evaluate_def,astTheory.getOpClass_def]
+  \\ qpat_x_assum ‘_ = (_, Rval [Real r])’ mp_tac
+  \\ ntac 2 (TOP_CASE_TAC \\ simp[])
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ simp[do_app_def]
+  \\ strip_tac
+  \\ fs[EVAL “do_app (st1.refs,st1.ffi) RealFromFP [Litv (Word64 0x3FF0000000000000w)]”]
+  \\ fs[CaseEq"prod", CaseEq"result"] \\ rveq
+  \\ imp_res_tac evaluate_sing \\ rveq \\ fs[]
+  \\ Cases_on ‘v’ \\ Cases_on ‘q.fp_state.real_sem’ \\ fs[]
+  \\ ‘st1 with <|refs := st1.refs; ffi := st1.ffi|> = st1’ by fs[state_component_equality] \\ fs[] \\ rveq
+  \\ fs[state_component_equality,fpState_component_equality]
+  \\ fs[float_to_real]
+  \\ fs[realOpsTheory.real_bop_def, source_to_sourceTheory.getRealBop_def]
+  \\ rpt strip_tac \\ fs[realTheory.real_div, realTheory.REAL_MUL_LZERO, realTheory.REAL_ADD_RID, realTheory.REAL_MUL_RID, realTheory.REAL_MUL_RINV, realTheory.REAL_DIV_REFL]
 QED
 
 (**
